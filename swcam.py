@@ -25,7 +25,7 @@ def g00_xy(x,y):
     return code
 
 def g_home():
-    code = g00_z(5)
+    code = g00_z(10)
     code += g00_xy(0,0)
     return code
 
@@ -35,24 +35,61 @@ def g02_rxy(r, x, y, depth, speedxy, speedz):
     code += 'G02 X%4.4f Y%4.4f I%4.4f J%4.4f F%4.4f\n' % (x-r, y, r, 0.0, speedxy)
     return code
 
+def g02_rxyn(r, x, y, depth, speedxy, speedz, n):
+    code = g00_xy(x-r, y)
+    cur_depth = 0
+    for i in range(n):
+        cur_depth += depth
+        code += g01_z(-cur_depth, speedz)
+        code += 'G02 X%4.4f Y%4.4f I%4.4f J%4.4f F%4.4f\n' % (x-r, y, r, 0.0, speedxy)
+    return code
+
+def g_cwbow_rpn(r, x1, y1, x2, y2):
+    code = g00_xy(x1, y1)
+    return code
+
 def g_drill(x, y, depth, speedz):
     code = g00_xy(x, y)
     code += g01_z(-depth, speedz)
+    code += g01_z(0, speedz)
     return code
 
-def g_drill_points(point_list, depth, speedz, upz):
+def g_drill_n(x, y, depth, speedz, stepz, dofast=False):
+    code = g00_xy(x, y)
+    d = 0
+    while d<depth:
+        if dofast:
+            code += g00_z(-d + 0.1)
+        else:
+            code += g00_z(0.1)
+        d+=stepz
+        code += g01_z(-d, speedz)
+    code += g00_z(0.1)
+    return code
+
+def g_drill_points(point_list, depth, speedz, upz, stepz, dofast=False):
     code = g00_z(upz)
     for p in point_list:
-        code += g_drill(p[0], p[1], depth, speedz)
+        code += g_drill_n(p[0], p[1], depth, speedz, stepz, dofast)
         code += g00_z(upz)
     return code
 
+def g_drill_quadro(x, y, a, depth, speedz, upz, stepz):
+    points = [[x-a/2, y-a/2],
+              [x+a/2, y-a/2],
+              [x-a/2, y+a/2],
+              [x+a/2, y+a/2]]
+    return g_drill_points(points, depth, speedz, upz, stepz)
+
+def g_drill_4_rect(x, y, ax, ay, depth, speedz, upz, stepz):
+    points = [[x-ax/2, y-ay/2],
+              [x+ax/2, y-ay/2],
+              [x-ax/2, y+ay/2],
+              [x+ax/2, y+ay/2]]
+    return g_drill_points(points, depth, speedz, upz, stepz)
+
 def g_drill_nema17(x, y, depth, speedz, upz):
-    points = [[x-31/2, y-31/2],
-              [x+31/2, y-31/2],
-              [x-31/2, y+31/2],
-              [x+31/2, y+31/2]]
-    return g_drill_points(points, depth, speedz, upz)
+    return g_drill_quadro(x, y, 31, depth, speedz, upz, depth)
 
 def hex_points(x, y, w):
     l = w / 3**0.5
@@ -72,7 +109,6 @@ def g_hex(x, y, w, depth, speedxy, speedz, upz):
     code += g01_list(points, speedxy)
     code += g00_z(upz)
     return code
-        
     
 
 class CamObject:
@@ -88,26 +124,20 @@ class Circle(CamObject):
         pass
 
 if __name__ == "__main__":
-    tool_r = 3
-    tool_sxy = 100
-    tool_sz = 50
+    tool_d = 4
+    tool_sxy = 50
+    tool_sz = 20
 
-    sheet_upz = 1
-    sheet_x = 42
-    sheet_y = 50
-    sheet_th = 4
+    sheet_upz = 5
+    sheet_x = 46
+    sheet_y = 27 + 21 + 9
+    sheet_th = 3
     
     code = g_start()
-    # nema17
-    code += g_drill_nema17(sheet_x/2, sheet_y - 21, sheet_th, tool_sz, sheet_upz)
-
-    # hex mount
-    code += g_hex(sheet_x/2 - 17, sheet_y - 21, 8 - tool_r, 2.5, tool_sxy, tool_sz, sheet_upz)
-    code += g_hex(sheet_x/2 + 17, sheet_y - 21, 8 - tool_r, 2.5, tool_sxy, tool_sz, sheet_upz)
-
+    
     code += g_home()
 
-    f = open('task.gcode', 'wb')
+    f = open('example.gcode', 'wb')
     f.write(bytes(code, encoding='UTF-8'))
     f.close()
     
