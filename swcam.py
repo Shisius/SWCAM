@@ -1,4 +1,5 @@
 from tkinter import *
+import numpy as np
 
 def g_start():
     return 'G17 G21 G90 G94 G54\n'
@@ -122,6 +123,42 @@ class Circle(CamObject):
 
     def __init__(self):
         pass
+
+class CamLine:
+
+    def __init__(self, start, end):
+        if len(start) > 2:
+            self.start = np.array(start)
+        else:
+            self.start = np.array([start[0], start[1], 0])
+        if len(end) > 2:
+            self.end = np.array(end)
+        else:
+            self.end = np.array([end[0], end[1], 0])
+        self.canvas_id = 0
+
+    def draw_xy(self, canvas):
+        self.canvas_id = canvas.create_line(self.start[0], canvas.winfo_height() - self.start[1], self.end[0], canvas.winfo_height() - self.end[1])
+
+    def mill(self, place, settings):
+        pass
+
+    def move(self, pos):
+        if len(pos) == 2:
+            pos = [pos[0], pos[1], 0]
+        self.start += pos
+        self.end += pos
+
+    def rotate(self, angle):
+        pass
+
+    def mirror(self, dim):
+        self.start[dim] *= -1
+        self.end[dim] *= -1
+
+    def todxf(self, dxf_doc):
+        dxf_doc.add_line((self.start[0],self.start[1]), (self.end[0], self.end[1]))
+
 
 if __name__ == "__main__":
     tool_d = 4
