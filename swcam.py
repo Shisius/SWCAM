@@ -1,5 +1,6 @@
 from tkinter import *
 import numpy as np
+import math
 
 def g_start():
     return 'G17 G21 G90 G94 G54\n'
@@ -110,7 +111,30 @@ def g_hex(x, y, w, depth, speedxy, speedz, upz):
     code += g01_list(points, speedxy)
     code += g00_z(upz)
     return code
+
+def swcam_az(start, end):
+    return math.atan2(end[0] - start[0], end[1] - start[1])
+
+def swcam_add_az(az1, az2):
+    naz = az1 + az2
+    naz -= 2*math.pi * (naz // (2*math.pi))
+    return naz
     
+def swcam_dazcw(az1,az2):
+    if az2 >= az1:
+        return az2-az1
+    else:
+        return 2*math.pi + az2 - az1
+
+def swcam_dazccw(az1,az2):
+    return swcam_dazcw(az2, az1)
+
+def swcam_rotate_z(vec, az):
+    newv = vec
+    newv[0] = vec[0] * math.cos(az) + vec[1] * math.sin(az)
+    newv[1] = vec[0] * (-1) * math.sin(az) + vec[1] * math.cos(az)
+    return newv
+
 
 class CamObject:
 
@@ -136,12 +160,37 @@ class CamLine:
         else:
             self.end = np.array([end[0], end[1], 0])
         self.canvas_id = 0
+        self.az = swcam_az(self.start, self.end)
 
     def draw_xy(self, canvas):
         self.canvas_id = canvas.create_line(self.start[0], canvas.winfo_height() - self.start[1], self.end[0], canvas.winfo_height() - self.end[1])
 
-    def mill(self, place, settings):
-        pass
+    # Place - distance to the instrument rotation axis. Positive - rightside, Negative - leftside. 
+    # Prev_az - azimuth of the previous vector
+    # Next_az - azimuth of the next vector
+    # Returns (start, end) mill points
+    def mill(self, place, prev_az, next_az):
+        self.az = swcam_az(self.start, self.end)
+        # Start
+        mstart = self.start
+        if place == 0:
+            return (self.start, self.end)
+        if place > 0:
+            daz_start = swcam_dazcw(self.az, swcam_add_az(prev_az, math.pi))
+        else:
+            daz_start = -1 * swcam_dazccw(self.az, swcam_add_az(prev_az, math.pi))
+        d_vec = np.array([0, place, 0]) / abs(math.sin(daz_start/2))
+        d_vec = swcam_rotate_z(d_vec, self.az + daz_start/2)
+        mstart = self.start + d_vec
+        # End
+        if place > 0:
+            daz_end = swcam_dazcw(next_az, swcam_add_az(self.az, math.pi))
+        else:
+            daz_end = -1 * swcam_dazccw(next_az, swcam_add_az(self.az, math.pi))
+        d_vec = np.array([0, place, 0]) / abs(math.sin(daz_end/2))
+        d_vec = swcam_rotate_z(d_vec, next_az + daz_start/2)
+        mend = self.end + d_vec
+        return (mstart, mend)
 
     def move(self, pos):
         if len(pos) == 2:
@@ -158,6 +207,19 @@ class CamLine:
 
     def todxf(self, dxf_doc):
         dxf_doc.add_line((self.start[0],self.start[1]), (self.end[0], self.end[1]))
+
+class CamProfile:
+
+    def __init__(self):
+        self.draw_lines = []
+        self.mill_lines = []
+
+    def draw_xy(self, canvas):
+        for l in self.lines:
+            l.draw_xy(canvas)
+
+    def mill(self, place):
+        pass
 
 
 if __name__ == "__main__":
