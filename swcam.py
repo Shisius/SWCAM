@@ -46,6 +46,17 @@ def g02_rxyn(r, x, y, depth, speedxy, speedz, n):
         code += 'G02 X%4.4f Y%4.4f I%4.4f J%4.4f F%4.4f\n' % (x-r, y, r, 0.0, speedxy)
     return code
 
+def g02_rxys(r, x, y, depth, speedxy, speedz, stepz):
+    code = g00_xy(x-r, y)
+    cur_depth = 0
+    while cur_depth < depth:
+        cur_depth += stepz
+        if cur_depth > depth:
+            cur_depth = depth
+        code += g01_z(-cur_depth, speedz)
+        code += 'G02 X%4.4f Y%4.4f I%4.4f J%4.4f F%4.4f\n' % (x-r, y, r, 0.0, speedxy)
+    return code
+
 def g_cwbow_rpn(r, x1, y1, x2, y2):
     code = g00_xy(x1, y1)
     return code
@@ -65,6 +76,8 @@ def g_drill_n(x, y, depth, speedz, stepz, dofast=False):
         else:
             code += g00_z(0.1)
         d+=stepz
+        if d > depth:
+            d = depth
         code += g01_z(-d, speedz)
     code += g00_z(0.1)
     return code
@@ -135,18 +148,18 @@ def swcam_rotate_z(vec, az):
     newv[1] = vec[0] * (-1) * math.sin(az) + vec[1] * math.cos(az)
     return newv
 
+# Cutdepth should be 0.15*d for d < 3 or 0.3*d for d > 3
+CAM_TOOL_DEFAULT = {"diameter": 1.0,
+                    "feedrate": 1.0,
+                    "drillrate": 1.0,
+                    "cutdepth": 0.15,
+                    "safez": 10.0}
 
 class CamObject:
 
     def __init__(self, cvs, cntr):
         self.cvs = cvs
         self.cntr = cntr
-
-
-class Circle(CamObject):
-
-    def __init__(self):
-        pass
 
 class CamLine:
 
@@ -213,6 +226,7 @@ class CamProfile:
     def __init__(self):
         self.draw_lines = []
         self.mill_lines = []
+        self.gcode = ''
 
     def draw_xy(self, canvas):
         for l in self.lines:
@@ -221,6 +235,56 @@ class CamProfile:
     def mill(self, place):
         pass
 
+class CamDrill:
+
+    def __init__(self, x, y, d = 1):
+        self.pos = [x,y]
+        self.diam = d
+        self.canvas_id = 0
+        self.gcode = ''
+
+    def draw_xy(self, canvas):
+        self.canvas_id = canvas.create_oval(self.diam, self.diam, self.pos[0] - self.diam/2, canvas.winfo_height() - self.pos[1] + self.diam/2)
+
+    def mill(self, depth, tool):
+        self.gcode = g00_z(tool["safez"])
+        self.gcode += g_drill_n(self.pos[0], self.pos[1], depth, tool["drillrate"], tool["cutdepth"], dofast=True)
+        self.gcode += g00_z(tool["safez"])
+
+class CamCircle:
+
+    def __init__(self, x, y, d):
+        self.pos = [x,y]
+        self.diam = d
+        self.canvas_id = 0
+        self.gcode = ''
+
+    def draw_xy(self, canvas):
+        self.canvas_id = canvas.create_oval(self.diam, self.diam, self.pos[0] - self.diam/2, canvas.winfo_height() - self.pos[1] + self.diam/2)
+
+    def mill(self, depth, place, tool):
+        self.gcode = g00_z(tool["safez"])
+        mill_r = self.diam/2
+        mill_cut = tool["feedrate"]
+        if place > 0:
+            mill_r -= tool['diameter']/2
+            if abs(place) > tool['diameter']:
+                mill_r -= place - tool['diameter']
+            mill_cut *= (self.diam - tool['diameter'])/self.diam
+            self.gcode += g02_rxys(mill_r, self.pos[0], self.pos[1], depth, tool["feedrate"], tool["drillrate"], tool["cutdepth"])
+        self.gcode += g00_z(tool["safez"])
+
+class CamTask:
+
+    def __init__(self):
+        self.profiles = []
+        self.tool = CAM_TOOL_DEFAULT
+
+    def set_tool(self):
+        pass
+
+    def add_drill(self, x, y, depth):
+        pass
 
 if __name__ == "__main__":
     tool_d = 4
@@ -236,8 +300,8 @@ if __name__ == "__main__":
     
     code += g_home()
 
-    f = open('example.gcode', 'wb')
-    f.write(bytes(code, encoding='UTF-8'))
-    f.close()
+    #f = open('example.gcode', 'wb')
+    #f.write(bytes(code, encoding='UTF-8'))
+    #f.close()
     
     
