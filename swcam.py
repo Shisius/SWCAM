@@ -221,6 +221,30 @@ class CamLine:
     def todxf(self, dxf_doc):
         dxf_doc.add_line((self.start[0],self.start[1]), (self.end[0], self.end[1]))
 
+class CamArc:
+
+    def __init__(self, start, end, center = None, angle = 0):
+        if len(start) > 2:
+            self.start = np.array(start)
+        else:
+            self.start = np.array([start[0], start[1], 0])
+        if len(end) > 2:
+            self.end = np.array(end)
+        else:
+            self.end = np.array([end[0], end[1], 0])
+        self.canvas_id = 0
+        self.angle = angle
+        if center is None:
+            pass
+        else:
+            self.angle = 0
+        
+
+
+    def mill(self, place, prev_az, next_az):
+        # if mill radius <= 0 - G01 at the same point
+        pass
+
 class CamProfile:
 
     def __init__(self):
