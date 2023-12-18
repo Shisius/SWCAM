@@ -143,7 +143,7 @@ def swcam_dazccw(az1,az2):
     return swcam_dazcw(az2, az1)
 
 def swcam_rotate_z(vec, az):
-    newv = vec
+    newv = vec[:]
     newv[0] = vec[0] * math.cos(az) + vec[1] * math.sin(az)
     newv[1] = vec[0] * (-1) * math.sin(az) + vec[1] * math.cos(az)
     return newv
@@ -155,11 +155,17 @@ CAM_TOOL_DEFAULT = {"diameter": 1.0,
                     "cutdepth": 0.15,
                     "safez": 10.0}
 
+CAM_MILL_COLOR = '#AA0000'
+
 class CamObject:
 
-    def __init__(self, cvs, cntr):
-        self.cvs = cvs
-        self.cntr = cntr
+    def __init__(self):
+        self.canvas_id = None
+        self.mill_ids = []
+
+    def clear_mill(self, canvas):
+        for _id in self.mill_ids:
+            canvas.delete(_id)
 
 class CamLine:
 
@@ -172,11 +178,24 @@ class CamLine:
             self.end = np.array(end)
         else:
             self.end = np.array([end[0], end[1], 0])
-        self.canvas_id = 0
+        self.canvas_id = None
         self.az = swcam_az(self.start, self.end)
+        self.mstart = self.start
+        self.mend = self.end
+        self.mill_ids = []
 
     def draw_xy(self, canvas):
+        if not (self.canvas_id is None):
+            canvas.delete(self.canvas_id)
         self.canvas_id = canvas.create_line(self.start[0], canvas.winfo_height() - self.start[1], self.end[0], canvas.winfo_height() - self.end[1])
+
+    def draw_mill(self, canvas):
+        self.mill_ids += [canvas.create_line(self.mstart[0], canvas.winfo_height() - self.mstart[1], self.mend[0], canvas.winfo_height() - self.mend[1], 
+                          outline=CAM_MILL_COLOR)]
+
+    def clear_mill(self, canvas):
+        for _id in self.mill_ids:
+            canvas.delete(_id)
 
     # Place - distance to the instrument rotation axis. Positive - rightside, Negative - leftside. 
     # Prev_az - azimuth of the previous vector
@@ -185,7 +204,7 @@ class CamLine:
     def mill(self, place, prev_az, next_az):
         self.az = swcam_az(self.start, self.end)
         # Start
-        mstart = self.start
+        self.mstart = self.start
         if place == 0:
             return (self.start, self.end)
         if place > 0:
@@ -194,7 +213,7 @@ class CamLine:
             daz_start = -1 * swcam_dazccw(self.az, swcam_add_az(prev_az, math.pi))
         d_vec = np.array([0, place, 0]) / abs(math.sin(daz_start/2))
         d_vec = swcam_rotate_z(d_vec, self.az + daz_start/2)
-        mstart = self.start + d_vec
+        self.mstart = self.start + d_vec
         # End
         if place > 0:
             daz_end = swcam_dazcw(next_az, swcam_add_az(self.az, math.pi))
@@ -202,8 +221,8 @@ class CamLine:
             daz_end = -1 * swcam_dazccw(next_az, swcam_add_az(self.az, math.pi))
         d_vec = np.array([0, place, 0]) / abs(math.sin(daz_end/2))
         d_vec = swcam_rotate_z(d_vec, next_az + daz_start/2)
-        mend = self.end + d_vec
-        return (mstart, mend)
+        self.mend = self.end + d_vec
+        return (self.mstart, self.mend)
 
     def move(self, pos):
         if len(pos) == 2:
@@ -221,9 +240,11 @@ class CamLine:
     def todxf(self, dxf_doc):
         dxf_doc.add_line((self.start[0],self.start[1]), (self.end[0], self.end[1]))
 
+# Angle > 0 => CW, < 0 => CCW
+# Problem: angles > 180 for center mode
 class CamArc:
 
-    def __init__(self, start, end, center = None, angle = 0):
+    def __init__(self, start, end, center = None, angle = 0, cw = True):
         if len(start) > 2:
             self.start = np.array(start)
         else:
@@ -232,18 +253,60 @@ class CamArc:
             self.end = np.array(end)
         else:
             self.end = np.array([end[0], end[1], 0])
-        self.canvas_id = 0
+        self.canvas_id = None
+        self.mill_ids = []
         self.angle = angle
+        self.radius = 0;
+        self.cw = cw
+        #self.center = center
         if center is None:
-            pass
+            if self.angle < 0:
+                self.cw = False
+            self.radius = sum((self.end - self.start)**2)**0.5 / (2 * math.sin(abs(self.angle)/2))
+            az_rot_z = swcam_az(self.start, self.end) + np.sign(self.angle)*(math.pi - abs(self.angle)) / 2
+            self.center = self.start + swcam_rotate_z([0, self.radius, 0], az_rot_z)
         else:
-            self.angle = 0
-        
+            if (len(center) > 2):
+                self.center = np.array(center)
+            else:
+                self.center = np.array([center[0], center[1], 0])
+            self.radius = sum((self.center-self.start)**2)**0.5
+            self.angle = math.acos( (sum((self.end-self.start)**2)/(2*self.radius**2)) - 1 )
+            if not self.cw:
+                self.angle *= -1
+        self.az = [swcam_az(self.start, self.end) - self.angle/2, swcam_az(self.start, self.end) + self.angle/2]
+        self.mstart = self.start
+        self.mend = self.end
+        self.mangle = self.angle
+        self.mrad = self.radius
 
+    def draw_xy(self, canvas):
+        if not (self.canvas_id is None):
+            canvas.delete(self.canvas_id)
+        self.canvas_id = canvas.create_arc(self.center[0] - self.radius, canvas.winfo_height() - (self.center[1] - self.radius), 
+                                           self.center[0] + self.radius, canvas.winfo_height() - (self.center[1] + self.radius), 
+                                           start=180 - self.az[1]*180/math.pi, extent=self.angle*180/math.pi, style=ARC)
+
+    def clear_mill(self, canvas):
+        for _id in self.mill_ids:
+            canvas.delete(_id)
 
     def mill(self, place, prev_az, next_az):
         # if mill radius <= 0 - G01 at the same point
-        pass
+        mill_r = self.radius - place
+        if mill_r <= 0:
+            return (self.center, self.center, self.center)
+        mstart = self.start
+        mend = self.end
+
+        return (mstart, mend, self.center)
+
+    def move(self, pos):
+        if len(pos) == 2:
+            pos = [pos[0], pos[1], 0]
+        self.start += pos
+        self.end += pos
+        self.center += pos
 
 class CamProfile:
 
@@ -262,12 +325,14 @@ class CamProfile:
 class CamDrill:
 
     def __init__(self, x, y, d = 1):
-        self.pos = [x,y]
+        self.pos = np.array([x,y,0])
         self.diam = d
-        self.canvas_id = 0
+        self.canvas_id = None
         self.gcode = ''
 
     def draw_xy(self, canvas):
+        if not (self.canvas_id is None):
+            canvas.delete(self.canvas_id)
         self.canvas_id = canvas.create_oval(self.diam, self.diam, self.pos[0] - self.diam/2, canvas.winfo_height() - self.pos[1] + self.diam/2)
 
     def mill(self, depth, tool):
@@ -275,28 +340,53 @@ class CamDrill:
         self.gcode += g_drill_n(self.pos[0], self.pos[1], depth, tool["drillrate"], tool["cutdepth"], dofast=True)
         self.gcode += g00_z(tool["safez"])
 
+    def move(self, pos):
+        if len(pos) == 2:
+            pos = [pos[0], pos[1], 0]
+        self.pos += pos
+
+# Problem: place < 0
 class CamCircle:
 
     def __init__(self, x, y, d):
-        self.pos = [x,y]
+        self.pos = np.array([x,y,0])
         self.diam = d
-        self.canvas_id = 0
+        self.canvas_id = None
         self.gcode = ''
+        self.mill_r = d/2
+        self.mill_ids = []
 
     def draw_xy(self, canvas):
-        self.canvas_id = canvas.create_oval(self.diam, self.diam, self.pos[0] - self.diam/2, canvas.winfo_height() - self.pos[1] + self.diam/2)
+        if not (self.canvas_id is None):
+            canvas.delete(self.canvas_id)
+        self.canvas_id = canvas.create_oval(self.pos[0] - self.diam/2, canvas.winfo_height() - (self.pos[1] - self.diam/2),
+                                            self.pos[0] + self.diam/2, canvas.winfo_height() - (self.pos[1] + self.diam/2))
+
+    def draw_mill(self, canvas):
+        self.mill_ids += [canvas.create_oval(self.pos[0] - self.mill_r, canvas.winfo_height() - (self.pos[1] - self.mill_r), 
+                                             self.pos[0] + self.mill_r, canvas.winfo_height() - (self.pos[1] + self.mill_r),
+                          outline=CAM_MILL_COLOR)]
+
+    def clear_mill(self, canvas):
+        for _id in self.mill_ids:
+            canvas.delete(_id)
 
     def mill(self, depth, place, tool):
         self.gcode = g00_z(tool["safez"])
-        mill_r = self.diam/2
+        self.mill_r = self.diam/2
         mill_cut = tool["feedrate"]
         if place > 0:
-            mill_r -= tool['diameter']/2
-            if abs(place) > tool['diameter']:
-                mill_r -= place - tool['diameter']
+            self.mill_r -= tool['diameter']/2
+            if abs(place) > tool['diameter']/2:
+                self.mill_r -= place - tool['diameter']/2
             mill_cut *= (self.diam - tool['diameter'])/self.diam
-            self.gcode += g02_rxys(mill_r, self.pos[0], self.pos[1], depth, tool["feedrate"], tool["drillrate"], tool["cutdepth"])
+            self.gcode += g02_rxys(self.mill_r, self.pos[0], self.pos[1], depth, tool["feedrate"], tool["drillrate"], tool["cutdepth"])
         self.gcode += g00_z(tool["safez"])
+
+    def move(self, pos):
+        if len(pos) == 2:
+            pos = [pos[0], pos[1], 0]
+        self.pos += pos
 
 class CamTask:
 
