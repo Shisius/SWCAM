@@ -153,7 +153,8 @@ CAM_TOOL_DEFAULT = {"diameter": 1.0,
                     "feedrate": 1.0,
                     "drillrate": 1.0,
                     "cutdepth": 0.15,
-                    "safez": 10.0}
+                    "safez": 10.0,
+                    "overlap": 50.0}
 
 CAM_MILL_COLOR = '#AA0000'
 
@@ -353,7 +354,7 @@ class CamCircle:
         self.diam = d
         self.canvas_id = None
         self.gcode = ''
-        self.mill_r = d/2
+        self.mill_r = [d/2]
         self.mill_ids = []
 
     def draw_xy(self, canvas):
@@ -363,24 +364,46 @@ class CamCircle:
                                             self.pos[0] + self.diam/2, canvas.winfo_height() - (self.pos[1] + self.diam/2))
 
     def draw_mill(self, canvas):
-        self.mill_ids += [canvas.create_oval(self.pos[0] - self.mill_r, canvas.winfo_height() - (self.pos[1] - self.mill_r), 
-                                             self.pos[0] + self.mill_r, canvas.winfo_height() - (self.pos[1] + self.mill_r),
-                          outline=CAM_MILL_COLOR)]
+        self.clear_mill(canvas)
+        for mr in self.mill_r:
+            self.mill_ids += [canvas.create_oval(self.pos[0] - mr, canvas.winfo_height() - (self.pos[1] - mr), 
+                                                 self.pos[0] + mr, canvas.winfo_height() - (self.pos[1] + mr),
+                                                 outline=CAM_MILL_COLOR)]
 
     def clear_mill(self, canvas):
         for _id in self.mill_ids:
             canvas.delete(_id)
 
+    # depth - cutting depth or list[start_depth, fin_depth]. Depth = -1 * z_position.
     def mill(self, depth, place, tool):
-        self.gcode = g00_z(tool["safez"])
-        self.mill_r = self.diam/2
+        start_depth = 0
+        end_depth = 0
+        if hasattr(depth, '__len__'):
+            if (len(depth) > 1):
+                start_depth = depth[0]
+                end_depth = depth[1]
+            else:
+                end_depth = depth[0]
+        else:
+            end_depth = depth
+        # cut_depth = end_depth - start_depth
         mill_cut = tool["feedrate"]
+        self.mill_r = [] #self.diam/2
+        self.gcode = g00_z(tool["safez"])
         if place > 0:
             self.mill_r -= tool['diameter']/2
             if abs(place) > tool['diameter']/2:
                 self.mill_r -= place - tool['diameter']/2
             mill_cut *= (self.diam - tool['diameter'])/self.diam
             self.gcode += g02_rxys(self.mill_r, self.pos[0], self.pos[1], depth, tool["feedrate"], tool["drillrate"], tool["cutdepth"])
+        elif place < 0: 
+            self.mill_r += [self.diam/2 + tool['diameter']/2]
+        else:
+            self.mill_r = [self.diam/2]
+            mill_cut *= (self.diam - tool['diameter'])/self.diam
+            self.gcode += g00_xy(self.pos[0]-self.mill_r[0], self.pos[1])
+            self.gcode += g00_z(start_depth)
+            self.gcode += g02_rxys(self.mill_r[0], self.pos[0], self.pos[1], end_depth, tool["feedrate"], tool["drillrate"], tool["cutdepth"])
         self.gcode += g00_z(tool["safez"])
 
     def move(self, pos):
