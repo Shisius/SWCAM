@@ -89,12 +89,12 @@ def g_drill_points(point_list, depth, speedz, upz, stepz, dofast=False):
         code += g00_z(upz)
     return code
 
-def g_drill_quadro(x, y, a, depth, speedz, upz, stepz):
+def g_drill_quadro(x, y, a, depth, speedz, upz, stepz, dofast=False):
     points = [[x-a/2, y-a/2],
               [x+a/2, y-a/2],
               [x-a/2, y+a/2],
               [x+a/2, y+a/2]]
-    return g_drill_points(points, depth, speedz, upz, stepz)
+    return g_drill_points(points, depth, speedz, upz, stepz, dofast)
 
 def g_drill_4_rect(x, y, ax, ay, depth, speedz, upz, stepz):
     points = [[x-ax/2, y-ay/2],
