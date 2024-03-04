@@ -2,6 +2,11 @@ from tkinter import *
 import numpy as np
 import math
 
+def move_2d(points, x, y):
+    for p in points:
+        p[0] += x
+        p[1] += y
+
 def g_start():
     return 'G17 G21 G90 G94 G54\n'
 
@@ -46,9 +51,10 @@ def g02_rxyn(r, x, y, depth, speedxy, speedz, n):
         code += 'G02 X%4.4f Y%4.4f I%4.4f J%4.4f F%4.4f\n' % (x-r, y, r, 0.0, speedxy)
     return code
 
-def g02_rxys(r, x, y, depth, speedxy, speedz, stepz):
+def g02_rxys(r, x, y, depth, speedxy, speedz, stepz, start_depth = 0):
     code = g00_xy(x-r, y)
-    cur_depth = 0
+    cur_depth = start_depth
+    code += g00_z(-cur_depth)
     while cur_depth < depth:
         cur_depth += stepz
         if cur_depth > depth:
@@ -57,14 +63,32 @@ def g02_rxys(r, x, y, depth, speedxy, speedz, stepz):
         code += 'G02 X%4.4f Y%4.4f I%4.4f J%4.4f F%4.4f\n' % (x-r, y, r, 0.0, speedxy)
     return code
 
+def g02_rxysf(r, x, y, depth, speedxy, speedz, stepz, step_xy, start_depth = 0):
+    code = g00_xy(x-r, y)
+    cur_depth = start_depth
+    code += g00_z(-cur_depth)
+    while cur_depth < depth:
+        cur_depth += stepz
+        if cur_depth > depth:
+            cur_depth = depth
+        code += g00_xy(x-r, y)
+        code += g01_z(-cur_depth, speedz)
+        cur_r = r
+        while cur_r > 0:
+            code += g01_xy(x-cur_r, y, speedxy)
+            code += 'G02 X%4.4f Y%4.4f I%4.4f J%4.4f F%4.4f\n' % (x-cur_r, y, cur_r, 0.0, speedxy)
+            cur_r -= step_xy
+    return code
+
 def g_cwbow_rpn(r, x1, y1, x2, y2):
     code = g00_xy(x1, y1)
     return code
 
 def g_drill(x, y, depth, speedz):
     code = g00_xy(x, y)
+    code += g00_z(0) 
     code += g01_z(-depth, speedz)
-    code += g01_z(0, speedz)
+    code += g00_z(0)
     return code
 
 def g_drill_n(x, y, depth, speedz, stepz, dofast=False):
@@ -106,6 +130,49 @@ def g_drill_4_rect(x, y, ax, ay, depth, speedz, upz, stepz):
 def g_drill_nema17(x, y, depth, speedz, upz):
     return g_drill_quadro(x, y, 31, depth, speedz, upz, depth)
 
+def g_poly(points, depth, speedxy, speedz, upz, stepz, start_depth = 0):
+    code = g00_z(upz)
+    code += g00_xy(points[0][0], points[0][1])
+    code += g00_z(-start_depth)
+    cur_depth = start_depth
+    while cur_depth < depth:
+        cur_depth += stepz
+        if cur_depth > depth:
+            cur_depth = depth
+        code += g01_z(-cur_depth, speedz)
+        code += g01_list(points, speedxy)
+    code += g00_z(upz)
+    return code
+
+def g_rect_f(x, y, ax, ay, depth, speedxy, speedz, upz, stepz, stepxy, start_depth = 0):
+    points = [[-ax/2,-ay/2], [-ax/2,ay/2], [ax/2,ay/2], [ax/2, -ay/2], [-ax/2,-ay/2]]
+    bias = [[1,1], [1, -1], [-1, -1], [-1, 1], [1,1]]
+    move_2d(points, x, y)
+    code = g00_z(upz)
+    code += g00_xy(points[0][0], points[0][1])
+    code += g00_z(-start_depth)
+    cur_depth = start_depth
+    while cur_depth < depth:
+        cur_depth += stepz
+        if cur_depth > depth:
+            cur_depth = depth
+        code += g00_xy(points[0][0], points[0][1])
+        code += g01_z(-cur_depth, speedz)
+        cur_ax = ax
+        cur_ay = ay
+        new_points = [p[:] for p in points]
+        while (cur_ax > 0) and (cur_ay > 0):
+            #print(cur_ax, cur_ay)
+            #print([[0.01*round(p[0]*100), 0.01*round(p[1]*100)] for p in new_points])
+            code += g01_list(new_points, speedxy)
+            for ip in range(len(new_points)):
+                new_points[ip][0] += bias[ip][0] * stepxy
+                new_points[ip][1] += bias[ip][1] * stepxy
+            cur_ax -= stepxy*2
+            cur_ay -= stepxy*2
+    code += g00_z(upz)
+    return code
+
 def hex_points(x, y, w):
     l = w / 3**0.5
     p = [[x-l/2, y-w/2],
@@ -113,15 +180,31 @@ def hex_points(x, y, w):
          [x+l, y],
          [x+l/2, y+w/2],
          [x-l/2, y+w/2],
-         [x-l,y]]
+         [x-l,y],
+         [x-l/2, y-w/2]]
     return p
 
-def g_hex(x, y, w, depth, speedxy, speedz, upz):
+def g_hex(x, y, w, depth, speedxy, speedz, upz, stepz, start_depth = 0):
     points = hex_points(x, y, w)
+    return g_poly(points, depth, speedxy, speedz, upz, stepz, start_depth)
+
+def g_rect(x, y, ax, ay, depth, speedxy, speedz, upz, stepz, start_depth = 0):
+    points = [[-ax/2,-ay/2], [-ax/2,ay/2], [ax/2,ay/2], [ax/2, -ay/2], [-ax/2,-ay/2]]
+    move_2d(points, x, y)
+    return g_poly(points, depth, speedxy, speedz, upz, stepz, start_depth)
+
+def g_cut(points, depth, speedxy, speedz, stepz, upz, start_depth = 0):
     code = g00_z(upz)
     code += g00_xy(points[0][0], points[0][1])
-    code += g01_z(-depth, speedz)
-    code += g01_list(points, speedxy)
+    code += g00_z(-start_depth)
+    cur_depth = start_depth
+    while cur_depth < depth:
+        cur_depth += stepz
+        if cur_depth > depth:
+            cur_depth = depth
+        code += g01_z(-cur_depth, speedz)
+        code += g01_list(points, speedxy)
+        points = points[-1::-1]
     code += g00_z(upz)
     return code
 
