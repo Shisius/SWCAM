@@ -91,7 +91,7 @@ def g_drill(x, y, depth, speedz):
     code += g00_z(0)
     return code
 
-def g_drill_n(x, y, depth, speedz, stepz, dofast=False):
+def g_drill_n(x, y, depth, speedz, stepz, dofast=True):
     code = g00_xy(x, y)
     d = 0
     while d<depth:
@@ -106,14 +106,14 @@ def g_drill_n(x, y, depth, speedz, stepz, dofast=False):
     code += g00_z(0.1)
     return code
 
-def g_drill_points(point_list, depth, speedz, upz, stepz, dofast=False):
+def g_drill_points(point_list, depth, speedz, upz, stepz, dofast=True):
     code = g00_z(upz)
     for p in point_list:
         code += g_drill_n(p[0], p[1], depth, speedz, stepz, dofast)
         code += g00_z(upz)
     return code
 
-def g_drill_quadro(x, y, a, depth, speedz, upz, stepz, dofast=False):
+def g_drill_quadro(x, y, a, depth, speedz, upz, stepz, dofast=True):
     points = [[x-a/2, y-a/2],
               [x+a/2, y-a/2],
               [x-a/2, y+a/2],
