@@ -7,6 +7,23 @@ def move_2d(points, x, y):
         p[0] += x
         p[1] += y
 
+# Clockwise
+def rotate_2d(points, angle):
+    for p in points:
+        np = p[:]
+        np[0] = p[0]*math.cos(math.pi*angle/180.0) + p[1]*math.sin(math.pi*angle/180.0) 
+        np[1] = p[1]*math.cos(math.pi*angle/180.0) - p[0]*math.sin(math.pi*angle/180.0)
+        p = np[:]
+
+def mirrorcp(points, axis):
+    add_p = []
+    for p in points:
+        if axis == 'y':
+            add_p += [[p[0], -1*p[1]]]
+        elif axis == 'x':
+            add_p += [[-1*p[0], p[1]]]
+    points += add_p[-1::-1]
+
 def g_start():
     return 'G17 G21 G90 G94 G54\n'
 
