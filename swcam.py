@@ -2,6 +2,12 @@ from tkinter import *
 import numpy as np
 import math
 
+def x2y(points):
+    for p in points:
+        x=p[0]
+        p[0]=p[1]
+        p[1]=x
+
 def move_2d(points, x, y):
     for p in points:
         p[0] += x
@@ -201,8 +207,12 @@ def hex_points(x, y, w):
          [x-l/2, y-w/2]]
     return p
 
-def g_hex(x, y, w, depth, speedxy, speedz, upz, stepz, start_depth = 0):
-    points = hex_points(x, y, w)
+def g_hex(x, y, w, depth, speedxy, speedz, upz, stepz, start_depth = 0, rotate = False):
+    if rotate:
+        points = hex_points(y, x, w)
+        x2y(points)
+    else:
+        points = hex_points(x, y, w)
     return g_poly(points, depth, speedxy, speedz, upz, stepz, start_depth)
 
 def g_rect(x, y, ax, ay, depth, speedxy, speedz, upz, stepz, start_depth = 0):
